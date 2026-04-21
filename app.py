@@ -305,7 +305,7 @@ CHECKLIST_REPORTING = """
 # --- 2. AIの設定 (StreamlitのSecretsからAPIキーを取得) ---
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-pro-latest')
 except:
     st.error("APIキーが設定されていないか、無効です。")
 
