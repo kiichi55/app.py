@@ -2,8 +2,7 @@ import streamlit as st
 import PyPDF2
 import google.generativeai as genai
 
-# --- 1. 審査基準（チェックリスト）の内容をここに設定 ---
-# 実際の文章に書き換えてください
+# --- 1. 審査基準（チェックリスト） ---
 CHECKLIST_PLANNING = """
 【計画時チェックリスト】
 基本資料のファイル名と同じフォルダ名が付されているか。
@@ -302,12 +301,37 @@ CHECKLIST_REPORTING = """
 地区事業の場合、通帳原本を事務局に返却したか。
 """
 
-# --- 2. AIの設定 (StreamlitのSecretsからAPIキーを取得) ---
+st.set_page_config(page_title="JCI東京 審査アプリ", layout="centered")
+st.title("⚖️ 規則・財務審査 自動化システム")
+
+# --- 2. APIとAIモデルの自動設定（今回の修正箇所） ---
+api_key_set = False
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-pro')
-except:
-    st.error("APIキーが設定されていないか、無効です。")
+    
+    # あなたのAPIキーで使えるモデルをGoogleに直接問い合わせる
+    available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    if not available_models:
+        st.error("APIキーは設定されていますが、使えるAIモデルが見つかりません。")
+    else:
+        # 優先順位をつけて自動選択する
+        target_model = None
+        for name in ["models/gemini-1.5-pro", "models/gemini-1.5-flash", "models/gemini-1.5-pro-latest", "models/gemini-1.0-pro"]:
+            if name in available_models:
+                target_model = name.replace("models/", "")
+                break
+        
+        # 上記がなくても、使えるものを強制的に選ぶ
+        if not target_model:
+            target_model = available_models[0].replace("models/", "")
+            
+        model = genai.GenerativeModel(target_model)
+        api_key_set = True
+        st.success(f"✅ 接続成功！AIモデル「{target_model}」で審査を行う準備ができました。")
+
+except Exception as e:
+    st.error(f"APIの接続エラーが発生しました: {e}")
 
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
@@ -317,33 +341,18 @@ def extract_text_from_pdf(file):
     return text
 
 # --- 3. アプリの画面構成 ---
-st.set_page_config(page_title="JCI東京 審査アプリ", layout="centered")
-st.title("⚖️ 規則・財務審査 自動化システム")
-
-# ステップ1：審査種別の選択
 st.header("1. 審査種別を選択してください")
-review_type = st.radio(
-    "どちらの審査を行いますか？",
-    ("計画時（議案作成時）", "報告時（事業完了後）"),
-    horizontal=True
-)
+review_type = st.radio("どちらの審査を行いますか？", ("計画時（議案作成時）", "報告時（事業完了後）"), horizontal=True)
 
-# 選択されたチェックリストをセット
-if "計画時" in review_type:
-    active_checklist = CHECKLIST_PLANNING
-else:
-    active_checklist = CHECKLIST_REPORTING
+active_checklist = CHECKLIST_PLANNING if "計画" in review_type else CHECKLIST_REPORTING
 
-# ステップ2：資料のアップロード
 st.header("2. 審査対象資料をアップロード")
 target_file = st.file_uploader("審査したい資料（PDF）を選択", type="pdf")
 
-if target_file:
+if target_file and api_key_set:
     with st.spinner("資料を解析して審査中..."):
-        # PDFからテキストを抽出
         target_text = extract_text_from_pdf(target_file)
         
-        # AIへの指示（プロンプト）の作成
         prompt = f"""
         あなたは青年会議所（JCI）の規則審査および財務審査の専門家です。
         以下の【審査基準】に基づき、アップロードされた【対象資料】を厳格にチェックしてください。
